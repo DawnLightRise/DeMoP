@@ -87,6 +87,16 @@ test_indices = [index_to_position[idx] for idx in test_indices_df.index if idx i
 train_dataset = Subset(dataset, train_indices)
 test_dataset = Subset(dataset, test_indices)
 
+# NOTE ON `val_dataset`:
+# Due to the limited size of the dataset and to allow a larger proportion of the
+# available data to be used for model training, the entire `train_dataset` is used
+# for training and the `val_dataset` below is intentionally defined as a subset of
+# `train_dataset`, used only for training-control purposes such as early stopping
+# and best-checkpoint selection. Thus, the `val_dataset` is not intended to provide
+# an independent estimate of model generalization performance. Final model evaluation
+# is performed on the `test_dataset`, which is independent of and non-overlapping with
+# `train_dataset`.
+
 train_size = len(train_dataset)
 val_size = train_size // 2
 generator = torch.Generator().manual_seed(42)
