@@ -18,7 +18,8 @@ Chen Tang<sup>†</sup>, Lei Yu<sup>†</sup>, Qiwei Li, and Lin Xu<sup>*</sup>
 <sup>*</sup> Corresponding author.
 
 Manuscript in preparation, 2026. Information current as of August 16, 2026.
-[**manuscript PDF**](./DeMoP_20260816_CT_Clean_Version.pdf)
+
+[**Manuscript PDF**](./DeMoP_20260816_CT_Clean_Version.pdf)
 
 ## Environment setup
 
