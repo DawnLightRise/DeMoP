@@ -19,6 +19,10 @@ Chen Tang<sup>†</sup>, Lei Yu<sup>†</sup>, Qiwei Li, and Lin Xu<sup>*</sup>
 
 Manuscript in preparation, 2026. Title and author information are current as of August 16, 2026, as shown in C. Tang's revised manuscript sent to L. Xu and L. Yu, and are consistent with the revised manuscript versions received by C. Tang from L. Xu on July 31, 2026, and from L. Yu on August 3, 2026.
 
+![Schematic overview of the DeMoP framework](Figure1.png)
+
+**Figure 1.** Schematic overview of the DeMoP framework. Patient-level clinical and molecular features are serialized into structured natural-language representations and encoded by DeBERTa-v3-large. Concatenated representations from the final four hidden layers are then processed by an attention-based pooling module and a ResNet-based mixture-of-experts prediction head for pan-cancer outcome prediction and gene-importance analysis. The number of experts shown here is illustrative only and can be adjusted.
+
 ## Environment setup
 
 ### 1. Create and activate a conda environment
