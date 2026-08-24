@@ -17,9 +17,9 @@ Chen Tang<sup>†</sup>, Lei Yu<sup>†</sup>, Qiwei Li, and Lin Xu<sup>*</sup>
 <sup>†</sup> These authors contributed equally to this work.  
 <sup>*</sup> Corresponding author.
 
-Manuscript in preparation, 2026. Title and author information are current as of August 16, 2026, as shown in CT's revised manuscript sent to LX and LY, and are consistent with the revised manuscript versions received by CT from LX on July 31, 2026, and from LY on August 3, 2026.
+Manuscript in preparation, 2026. Title and author information are current as of August 23, 2026.
 
-[**Manuscript PDF**](./DeMoP_20260816_CT_Clean_Version.pdf) as of August 16, 2026.
+[**Manuscript PDF**](./DeMoP_20260823_NEW.pdf) as of August 23, 2026.
 
 ![Schematic overview of the DeMoP framework](Figure1.png)
 
