@@ -19,7 +19,7 @@ Chen Tang<sup>†</sup>, Lei Yu<sup>†</sup>, Qiwei Li, and Lin Xu<sup>*</sup>
 
 Manuscript in preparation, 2026. Title and author information are current as of August 23, 2026.
 
-[**Manuscript PDF**](./DeMoP_20260823.pdf) as of August 23, 2026.
+[**Manuscript PDF**](./BIORXIV-2026-746579v1-Xu.pdf) as of August 23, 2026.
 
 ![Schematic overview of the DeMoP framework](Figure1.png)
 
