@@ -21,9 +21,9 @@ Manuscript in preparation, 2026. Title and author information are current as of 
 
 [**Manuscript PDF**](./DeMoP_20260823.pdf) as of August 23, 2026.
 
-![Schematic overview of the DeMoP framework](Figure.png)
+![Schematic overview of the DeMoP framework](Figure1.png)
 
-**Figure 1.** Schematic overview of the DeMoP framework. Patient-level clinical and molecular features are serialized into structured natural-language representations and encoded by DeBERTa-v3-large. Concatenated representations from the final four hidden layers are then processed by an attention-based pooling module and a ResNet-based mixture-of-experts prediction head for pan-cancer outcome prediction and gene-importance analysis. The number of experts shown here is illustrative only and can be adjusted.
+**Figure 1.** Schematic overview of the DeMoP framework. Patient-level clinical and molecular features are serialized into structured natural-language representations and encoded by a fine-tuned DeBERTa-v3-large. Concatenated representations from the final four hidden layers are then processed by an attention-based pooling module and a ResNet-based mixture-of-experts prediction head for pan-cancer outcome prediction and gene-importance analysis. The number of experts shown here is illustrative only and can be adjusted.
 
 ## Environment setup
 
