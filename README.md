@@ -78,7 +78,7 @@ The scripts expect CSV files with at least the following columns:
 - `CANCER_TYPE`
 - `CANCER_TYPE_DETAILED`
 
-For gene ablation analysis, the ablation script extracts semicolon-separated gene segments from this section and removes them one at a time.
+For gene ablation analysis, the ablation script extracts semicolon-separated gene segments from this section and removes them one at a time. Regarding the data format, please refer to `G_data_llm_20250324.csv`, which can be extracted from `./G_data_llm_20250324.tar.gz`.
 
 ## Model training
 
