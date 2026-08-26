@@ -78,13 +78,7 @@ The scripts expect CSV files with at least the following columns:
 - `CANCER_TYPE`
 - `CANCER_TYPE_DETAILED`
 
-For gene ablation analysis, the `description` field should contain a section formatted like:
-
-```text
-GENE MUTATION PROFILE: TP53 mutation; EGFR amplification; ...
-```
-
-The ablation script extracts semicolon-separated gene segments from this section and removes them one at a time.
+For gene ablation analysis, the ablation script extracts semicolon-separated gene segments from this section and removes them one at a time.
 
 ## Model training
 
