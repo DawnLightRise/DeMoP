@@ -17,9 +17,7 @@ Chen Tang<sup>†</sup>, Lei Yu<sup>†</sup>, Qiwei Li, and Lin Xu<sup>*</sup>
 <sup>†</sup> These authors contributed equally to this work.  
 <sup>*</sup> Corresponding author.
 
-Submitted to bioRxiv, 2026. The manuscript is currently undergoing screening prior to public posting.
-
-Title and author information are current as of August 24, 2026.
+Available as a preprint on bioRxiv, 2026: https://doi.org/10.64898/2026.08.24.746579. Manuscript under consideration at *Nature Machine Intelligence* as of August 27, 2026
 
 ![Schematic overview of the DeMoP framework](Figure1.png)
 
