@@ -1,3 +1,27 @@
+# The original model design and initial implementation of this program were
+# developed by Chen Tang in 2024-2025 during his appointment at UT Southwestern
+# Medical Center (2021-2025).
+
+# Chen Tang left UT Southwestern Medical Center in July 2025 and has continued
+# scientific communication with collaborators regarding manuscripts that were
+# in preparation.
+
+# This repository is publicly available, and Chen Tang made additional updates 
+# to the code in his personal time, primarily in August 2026, involving added 
+# comments and structural organization, when he was not employed by UT Southwestern 
+# Medical Center.
+
+# Chen Tang's current email: chen.tang.diary@gmail.com.
+
+# Information for the Corresponding Manuscript:
+# Tang, C., L. Yu, Q. Li, and L. Xu. 2026. DeMoP: A Language-Model-Guided Mixture-of-Experts
+# Framework for Cancer Prognosis. bioRxiv preprint. https://doi.org/10.64898/2026.08.24.746579.
+# Manuscript under consideration at Nature Machine Intelligence as of August 27, 2026.
+
+# ============================================================
+# 1. Environment and imports
+# ============================================================
+
 import os
 os.environ["CUDA_VISIBLE_DEVICES"] = "1"
 
@@ -17,10 +41,9 @@ from transformers import (
 from sklearn.metrics import accuracy_score, f1_score
 import re
 
-torch.manual_seed(42)
-torch.cuda.empty_cache()
-
-tokenizer = DebertaV2Tokenizer.from_pretrained('./deberta_finetuned_custom_OS_0422_EarlyStopping')
+# ============================================================
+# 2. Dataset
+# ============================================================
 
 class TextDataset(Dataset):
     def __init__(self, texts, labels, tokenizer, max_len=512, cancer_types=None, cancer_types_detailed=None):
@@ -55,6 +78,10 @@ class TextDataset(Dataset):
         if self.cancer_types_detailed is not None:
             item['CANCER_TYPE_DETAILED'] = self.cancer_types_detailed[idx]
         return item
+
+# ============================================================
+# 3. Model architecture
+# ============================================================
 
 class Attention(nn.Module):
     def __init__(self, input_dim):
@@ -161,17 +188,9 @@ class CustomDebertaV3MoEForSequenceClassification(nn.Module):
             loss = nn.CrossEntropyLoss()(logits, labels)
         return {'loss': loss, 'logits': logits}
 
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-model = CustomDebertaV3MoEForSequenceClassification(num_experts=4)
-state_dict = torch.load(
-    './deberta_finetuned_custom_OS_0422_EarlyStopping/model_weights.pth',
-    map_location=device
-)
-model.load_state_dict(state_dict)
-model.to(device)
-model.eval()
-
-data_collator = DataCollatorWithPadding(tokenizer=tokenizer, return_tensors="pt")
+# ============================================================
+# 4. Evaluation metric and custom Trainer
+# ============================================================
 
 def compute_metrics(eval_pred):
     logits, labels = eval_pred
@@ -192,29 +211,9 @@ class CustomTrainer(Trainer):
         loss = outputs["loss"]
         return (loss, outputs) if return_outputs else loss
 
-trainer = CustomTrainer(
-    model=model,
-    args=TrainingArguments(
-        output_dir='./tmp_eval',
-        per_device_eval_batch_size=8,
-        fp16=True
-    ),
-    data_collator=data_collator,
-    compute_metrics=compute_metrics
-)
-
-data_all = pd.read_csv('G_data_llm_20250324.csv', index_col=0)
-texts_all = data_all['description'].astype(str).tolist()
-labels_all = data_all['os_group'].tolist()
-cancer_types_all = data_all['CANCER_TYPE'].tolist()
-cancer_types_detailed_all = data_all['CANCER_TYPE_DETAILED'].tolist()
-
-dataset_all = TextDataset(
-    texts_all, labels_all, tokenizer,
-    max_len=512,
-    cancer_types=cancer_types_all,
-    cancer_types_detailed=cancer_types_detailed_all
-)
+# ============================================================
+# 5. Gene-mutation ablation helpers
+# ============================================================
 
 def get_prediction_prob(text, tokenizer, model, device):
     inputs = tokenizer.encode_plus(
@@ -290,36 +289,99 @@ def ablate_text(text, tokenizer, model, device):
 
 from collections import defaultdict
 
-gene_delta_dict = defaultdict(list)
-data_all = pd.read_csv('G_data_llm_20250324.csv', index_col=0)
-texts_all = data_all['description'].astype(str).tolist()
-total = len(texts_all)
+# ============================================================
+# 6. Main
+# ============================================================
 
-for i, txt in enumerate(texts_all):
-    print(f"Processing sample {i+1}/{total}")
-    _, _, ablation = ablate_text(txt, tokenizer, model, device)
-    for seg, d in ablation.items():
-        gene_delta_dict[seg].append(d)
+def main():
+    # --------------------------------------------------------
+    # Step 1: Reproducibility and tokenizer setup
+    # --------------------------------------------------------
+    torch.manual_seed(42)
+    torch.cuda.empty_cache()
+
+    tokenizer = DebertaV2Tokenizer.from_pretrained('./deberta_finetuned_custom_OS_0422_EarlyStopping')
+
+    # --------------------------------------------------------
+    # Step 2: Load the trained model and prepare evaluation
+    # --------------------------------------------------------
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model = CustomDebertaV3MoEForSequenceClassification(num_experts=4)
+    state_dict = torch.load(
+        './deberta_finetuned_custom_OS_0422_EarlyStopping/model_weights.pth',
+        map_location=device
+    )
+    model.load_state_dict(state_dict)
+    model.to(device)
+    model.eval()
+
+    data_collator = DataCollatorWithPadding(tokenizer=tokenizer, return_tensors="pt")
+
+    # --------------------------------------------------------
+    # Step 3: Build the evaluation Trainer
+    # --------------------------------------------------------
+    trainer = CustomTrainer(
+        model=model,
+        args=TrainingArguments(
+            output_dir='./tmp_eval',
+            per_device_eval_batch_size=8,
+            fp16=True
+        ),
+        data_collator=data_collator,
+        compute_metrics=compute_metrics
+    )
+
+    # --------------------------------------------------------
+    # Step 4: Load the full dataset
+    # --------------------------------------------------------
+    data_all = pd.read_csv('G_data_llm_20250324.csv', index_col=0)
+    texts_all = data_all['description'].astype(str).tolist()
+    labels_all = data_all['os_group'].tolist()
+    cancer_types_all = data_all['CANCER_TYPE'].tolist()
+    cancer_types_detailed_all = data_all['CANCER_TYPE_DETAILED'].tolist()
+
+    dataset_all = TextDataset(
+        texts_all, labels_all, tokenizer,
+        max_len=512,
+        cancer_types=cancer_types_all,
+        cancer_types_detailed=cancer_types_detailed_all
+    )
+
+    # --------------------------------------------------------
+    # Step 5: Run gene-segment ablation analysis
+    # --------------------------------------------------------
+    gene_delta_dict = defaultdict(list)
+    data_all = pd.read_csv('G_data_llm_20250324.csv', index_col=0)
+    texts_all = data_all['description'].astype(str).tolist()
+    total = len(texts_all)
+
+    for i, txt in enumerate(texts_all):
+        print(f"Processing sample {i+1}/{total}")
+        _, _, ablation = ablate_text(txt, tokenizer, model, device)
+        for seg, d in ablation.items():
+            gene_delta_dict[seg].append(d)
+            if i % 100 == 0:
+                print(f"  Seg: '{seg}' -> delta: {d:.6f}")
         if i % 100 == 0:
-            print(f"  Seg: '{seg}' -> delta: {d:.6f}")
-    if i % 100 == 0:
-        print("\n")
+            print("\n")
 
-avg_delta = {seg: np.mean(ds) for seg, ds in gene_delta_dict.items()}
-sorted_avg = sorted(avg_delta.items(), key=lambda x: x[1], reverse=True)
+    avg_delta = {seg: np.mean(ds) for seg, ds in gene_delta_dict.items()}
+    sorted_avg = sorted(avg_delta.items(), key=lambda x: x[1], reverse=True)
 
-print("\n====== Δ ranking ======")
-for seg, val in sorted_avg:
-    print(f"Seg: '{seg}' -> Avg delta: {val:.6f}")
+    print("\n====== Δ ranking ======")
+    for seg, val in sorted_avg:
+        print(f"Seg: '{seg}' -> Avg delta: {val:.6f}")
 
-grouped = defaultdict(list)
-for seg, ds in gene_delta_dict.items():
-    key = seg[:20]
-    grouped[key].extend(ds)
-avg_grouped = {k: np.mean(v) for k, v in grouped.items()}
-sorted_grouped = sorted(avg_grouped.items(), key=lambda x: x[1], reverse=True)
+    grouped = defaultdict(list)
+    for seg, ds in gene_delta_dict.items():
+        key = seg[:20]
+        grouped[key].extend(ds)
+    avg_grouped = {k: np.mean(v) for k, v in grouped.items()}
+    sorted_grouped = sorted(avg_grouped.items(), key=lambda x: x[1], reverse=True)
 
-print("\n====== top 20 Δ ranking ======")
-for grp, val in sorted_grouped:
-    print(f"Group: '{grp}' -> Avg delta: {val:.6f}")
+    print("\n====== top 20 Δ ranking ======")
+    for grp, val in sorted_grouped:
+        print(f"Group: '{grp}' -> Avg delta: {val:.6f}")
 
+if __name__ == "__main__":
+    main()

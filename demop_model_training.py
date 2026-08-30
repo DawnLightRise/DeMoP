@@ -1,3 +1,27 @@
+# The original model design and initial implementation of this program were
+# developed by Chen Tang in 2024-2025 during his appointment at UT Southwestern
+# Medical Center (2021-2025).
+
+# Chen Tang left UT Southwestern Medical Center in July 2025 and has continued
+# scientific communication with collaborators regarding manuscripts that were
+# in preparation.
+
+# This repository is publicly available, and Chen Tang made additional updates 
+# to the code in his personal time, primarily in August 2026, involving added 
+# comments and structural organization, when he was not employed by UT Southwestern 
+# Medical Center.
+
+# Chen Tang's current email: chen.tang.diary@gmail.com.
+
+# Information for the Corresponding Manuscript:
+# Tang, C., L. Yu, Q. Li, and L. Xu. 2026. DeMoP: A Language-Model-Guided Mixture-of-Experts
+# Framework for Cancer Prognosis. bioRxiv preprint. https://doi.org/10.64898/2026.08.24.746579.
+# Manuscript under consideration at Nature Machine Intelligence as of August 27, 2026.
+
+# ============================================================
+# 1. Environment and imports
+# ============================================================
+
 import os
 os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 
@@ -24,16 +48,9 @@ from transformers import (
     TrainerState
 )
 
-set_seed(42)
-torch.cuda.empty_cache()
-
-data = pd.read_csv('G_data_llm_20250324.csv', index_col=0)
-texts = data['description'].astype(str).tolist()
-labels = data['os_group'].tolist()
-cancer_types = data['CANCER_TYPE'].tolist()
-cancer_types_detailed = data['CANCER_TYPE_DETAILED'].tolist()
-
-tokenizer = DebertaV2Tokenizer.from_pretrained('microsoft/deberta-v3-large')
+# ============================================================
+# 2. Dataset definition
+# ============================================================
 
 class TextDataset(Dataset):
     def __init__(self, texts, labels, tokenizer, max_len=512, cancer_types=None, cancer_types_detailed=None):
@@ -70,43 +87,9 @@ class TextDataset(Dataset):
             item['CANCER_TYPE_DETAILED'] = self.cancer_types_detailed[idx]
         return item
 
-dataset = TextDataset(
-    texts, labels, tokenizer, max_len=512,
-    cancer_types=cancer_types,
-    cancer_types_detailed=cancer_types_detailed
-)
-
-index_to_position = {idx: pos for pos, idx in enumerate(data.index)}
-
-train_indices_df = pd.read_csv('G_train_data_llm_20250324.csv', index_col=0)
-test_indices_df = pd.read_csv('G_test_data_llm_20250324.csv', index_col=0)
-
-train_indices = [index_to_position[idx] for idx in train_indices_df.index if idx in index_to_position]
-test_indices = [index_to_position[idx] for idx in test_indices_df.index if idx in index_to_position]
-
-train_dataset = Subset(dataset, train_indices)
-test_dataset = Subset(dataset, test_indices)
-
-# NOTE ON `val_dataset`:
-# Due to the limited size of the dataset and to allow a larger proportion of the
-# available data to be used for model training, the entire `train_dataset` is used
-# for training and the `val_dataset` below is intentionally defined as a subset of
-# `train_dataset`, used only for training-control purposes such as early stopping
-# and best-checkpoint selection. Thus, the `val_dataset` is not intended to provide
-# an independent estimate of model generalization performance. Final model evaluation
-# is performed on the `test_dataset`, which is independent of and non-overlapping with
-# `train_dataset`.
-
-train_size = len(train_dataset)
-val_size = train_size // 2
-generator = torch.Generator().manual_seed(42)
-_, val_dataset = random_split(train_dataset, [train_size - val_size, val_size], generator=generator)
-
-print(f"train_dataset: {len(train_dataset)}")
-print(f"val_dataset: {len(val_dataset)}")
-print(f"test_dataset: {len(test_dataset)}")
-
-data_collator = DataCollatorWithPadding(tokenizer=tokenizer, return_tensors="pt")
+# ============================================================
+# 3. Model architecture
+# ============================================================
 
 class Attention(nn.Module):
     def __init__(self, input_dim):
@@ -236,47 +219,9 @@ class CustomDebertaV3MoEForSequenceClassification(nn.Module):
 
         return {'loss': loss, 'logits': logits}
 
-model = CustomDebertaV3MoEForSequenceClassification(num_experts=4)
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-model.to(device)
-
-training_args = TrainingArguments(
-    output_dir='./results_deberta_OS_0422_EarlyStopping',
-    num_train_epochs=10,
-    per_device_train_batch_size=4,
-    per_device_eval_batch_size=8,
-    warmup_steps=10000,
-    weight_decay=0.01,
-    logging_dir='./logs_deberta',
-    logging_steps=1000,
-    eval_strategy="steps",
-    eval_steps=10000,
-    save_strategy="steps",
-    save_steps=10000,
-    learning_rate=5e-7,
-    load_best_model_at_end=True,
-    metric_for_best_model="eval_f1",
-    greater_is_better=True,
-    fp16=True
-)
-
-optimizer = AdamW(model.parameters(), lr=training_args.learning_rate)
-
-train_loader = DataLoader(
-    train_dataset,
-    batch_size=training_args.per_device_train_batch_size,
-    shuffle=True,
-    collate_fn=data_collator,
-    drop_last=True
-)
-
-num_training_steps = training_args.num_train_epochs * len(train_loader)
-lr_scheduler = get_scheduler(
-    "linear",
-    optimizer=optimizer,
-    num_warmup_steps=training_args.warmup_steps,
-    num_training_steps=num_training_steps
-)
+# ============================================================
+# 4. Metrics, Trainer, and early stopping
+# ============================================================
 
 def compute_metrics(eval_pred):
     logits, labels = eval_pred
@@ -335,262 +280,382 @@ class EarlyStoppingCallback(TrainerCallback):
         self.prev_metric = current_metric
         return control
 
-trainer = CustomTrainer(
-    model=model,
-    args=training_args,
-    train_dataset=train_dataset,
-    eval_dataset=val_dataset,
-    data_collator=data_collator,
-    compute_metrics=compute_metrics,
-    optimizers=(optimizer, lr_scheduler)
-)
+# ============================================================
+# 5. Main
+# ============================================================
 
-early_stopping_callback = EarlyStoppingCallback(
-    early_stopping_patience=5,
-    early_stopping_threshold=1e-6
-)
+def main():
+    # --------------------------------------------------------
+    # Step 1: Reproducibility, data loading, and tokenizer
+    # --------------------------------------------------------
+    set_seed(42)
+    torch.cuda.empty_cache()
 
-trainer.add_callback(early_stopping_callback)
+    data = pd.read_csv('G_data_llm_20250324.csv', index_col=0)
+    texts = data['description'].astype(str).tolist()
+    labels = data['os_group'].tolist()
+    cancer_types = data['CANCER_TYPE'].tolist()
+    cancer_types_detailed = data['CANCER_TYPE_DETAILED'].tolist()
 
-from transformers.trainer_utils import get_last_checkpoint
+    tokenizer = DebertaV2Tokenizer.from_pretrained('microsoft/deberta-v3-large')
 
-output_dir = training_args.output_dir
-last_checkpoint = None
+    # --------------------------------------------------------
+    # Step 2: Dataset construction and data split
+    # --------------------------------------------------------
+    dataset = TextDataset(
+        texts, labels, tokenizer, max_len=512,
+        cancer_types=cancer_types,
+        cancer_types_detailed=cancer_types_detailed
+    )
 
-if os.path.isdir(output_dir):
-    last_checkpoint = get_last_checkpoint(output_dir)
+    index_to_position = {idx: pos for pos, idx in enumerate(data.index)}
 
-if last_checkpoint is not None:
-    print(f"*** Found checkpoint {last_checkpoint}, resuming from there ***")
-    trainer.train(resume_from_checkpoint=last_checkpoint)
-else:
-    print("*** No checkpoint found, starting from scratch ***")
-    trainer.train()
+    train_indices_df = pd.read_csv('G_train_data_llm_20250324.csv', index_col=0)
+    test_indices_df = pd.read_csv('G_test_data_llm_20250324.csv', index_col=0)
 
-eval_results = trainer.evaluate()
-print(f"Evaluation results: {eval_results}")
+    train_indices = [index_to_position[idx] for idx in train_indices_df.index if idx in index_to_position]
+    test_indices = [index_to_position[idx] for idx in test_indices_df.index if idx in index_to_position]
 
-test_results = trainer.evaluate(test_dataset)
-print("\n======== FINAL TEST RESULTS ========\n")
-print(f"Final Test results: {test_results}\n")
+    train_dataset = Subset(dataset, train_indices)
+    test_dataset = Subset(dataset, test_indices)
 
-output_dir = './deberta_finetuned_custom_OS_0422_EarlyStopping'
-os.makedirs(output_dir, exist_ok=True)
-torch.save(model.state_dict(), os.path.join(output_dir, 'model_weights.pth'))
-torch.save(model, os.path.join(output_dir, 'full_model.pth'))
-tokenizer.save_pretrained(output_dir)
-print(f"Model and tokenizer saved to {output_dir}")
+    # NOTE ON `val_dataset`:
+    # Due to the limited size of the dataset and to allow a larger proportion of the
+    # available data to be used for model training, the entire `train_dataset` is used
+    # for training and the `val_dataset` below is intentionally defined as a subset of
+    # `train_dataset`, used only for training-control purposes such as early stopping
+    # and best-checkpoint selection. Thus, the `val_dataset` is not intended to provide
+    # an independent estimate of model generalization performance. Final model evaluation
+    # is performed on the `test_dataset`, which is independent of and non-overlapping with
+    # `train_dataset`.
 
-from collections import defaultdict
+    train_size = len(train_dataset)
+    val_size = train_size // 2
+    generator = torch.Generator().manual_seed(42)
+    _, val_dataset = random_split(train_dataset, [train_size - val_size, val_size], generator=generator)
 
-cancer_type_counts = defaultdict(int)
-for i in range(len(test_dataset)):
-    sample = test_dataset[i]
-    ctype = sample["CANCER_TYPE"]
-    cancer_type_counts[ctype] += 1
+    print(f"train_dataset: {len(train_dataset)}")
+    print(f"val_dataset: {len(val_dataset)}")
+    print(f"test_dataset: {len(test_dataset)}")
 
-cancer_types_unique = list(cancer_type_counts.keys())
-results_by_cancer_type = {}
+    data_collator = DataCollatorWithPadding(tokenizer=tokenizer, return_tensors="pt")
 
-for ctype in cancer_types_unique:
-    indices = []
+    # --------------------------------------------------------
+    # Step 3: Model, training arguments, optimizer, and scheduler
+    # --------------------------------------------------------
+    model = CustomDebertaV3MoEForSequenceClassification(num_experts=4)
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model.to(device)
+
+    training_args = TrainingArguments(
+        output_dir='./results_deberta_OS_0422_EarlyStopping',
+        num_train_epochs=10,
+        per_device_train_batch_size=4,
+        per_device_eval_batch_size=8,
+        warmup_steps=10000,
+        weight_decay=0.01,
+        logging_dir='./logs_deberta',
+        logging_steps=1000,
+        eval_strategy="steps",
+        eval_steps=10000,
+        save_strategy="steps",
+        save_steps=10000,
+        learning_rate=5e-7,
+        load_best_model_at_end=True,
+        metric_for_best_model="eval_f1",
+        greater_is_better=True,
+        fp16=True
+    )
+
+    optimizer = AdamW(model.parameters(), lr=training_args.learning_rate)
+
+    train_loader = DataLoader(
+        train_dataset,
+        batch_size=training_args.per_device_train_batch_size,
+        shuffle=True,
+        collate_fn=data_collator,
+        drop_last=True
+    )
+
+    num_training_steps = training_args.num_train_epochs * len(train_loader)
+    lr_scheduler = get_scheduler(
+        "linear",
+        optimizer=optimizer,
+        num_warmup_steps=training_args.warmup_steps,
+        num_training_steps=num_training_steps
+    )
+
+    # --------------------------------------------------------
+    # Step 4: Trainer construction and training
+    # --------------------------------------------------------
+    trainer = CustomTrainer(
+        model=model,
+        args=training_args,
+        train_dataset=train_dataset,
+        eval_dataset=val_dataset,
+        data_collator=data_collator,
+        compute_metrics=compute_metrics,
+        optimizers=(optimizer, lr_scheduler)
+    )
+
+    early_stopping_callback = EarlyStoppingCallback(
+        early_stopping_patience=5,
+        early_stopping_threshold=1e-6
+    )
+
+    trainer.add_callback(early_stopping_callback)
+
+    from transformers.trainer_utils import get_last_checkpoint
+
+    output_dir = training_args.output_dir
+    last_checkpoint = None
+
+    if os.path.isdir(output_dir):
+        last_checkpoint = get_last_checkpoint(output_dir)
+
+    if last_checkpoint is not None:
+        print(f"*** Found checkpoint {last_checkpoint}, resuming from there ***")
+        trainer.train(resume_from_checkpoint=last_checkpoint)
+    else:
+        print("*** No checkpoint found, starting from scratch ***")
+        trainer.train()
+
+    # --------------------------------------------------------
+    # Step 5: Evaluation and model saving
+    # --------------------------------------------------------
+    eval_results = trainer.evaluate()
+    print(f"Evaluation results: {eval_results}")
+
+    test_results = trainer.evaluate(test_dataset)
+    print("\n======== FINAL TEST RESULTS ========\n")
+    print(f"Final Test results: {test_results}\n")
+
+    output_dir = './deberta_finetuned_custom_OS_0422_EarlyStopping'
+    os.makedirs(output_dir, exist_ok=True)
+    torch.save(model.state_dict(), os.path.join(output_dir, 'model_weights.pth'))
+    torch.save(model, os.path.join(output_dir, 'full_model.pth'))
+    tokenizer.save_pretrained(output_dir)
+    print(f"Model and tokenizer saved to {output_dir}")
+
+    from collections import defaultdict
+
+    # --------------------------------------------------------
+    # Step 6: Cancer-type subgroup evaluation
+    # --------------------------------------------------------
+    cancer_type_counts = defaultdict(int)
     for i in range(len(test_dataset)):
         sample = test_dataset[i]
-        if sample["CANCER_TYPE"] == ctype:
-            indices.append(i)
-    if len(indices) < 200:
-        continue
-    type_subset = Subset(test_dataset, indices)
-    type_result = trainer.evaluate(type_subset)
-    results_by_cancer_type[ctype] = {"num_samples": len(indices), "metrics": type_result}
-    
-print("\n======== ALL CANCER TYPES' TEST RESULTS ========\n")
-for ctype, result_dict in results_by_cancer_type.items():
-    num_samples = result_dict["num_samples"]
-    metrics = result_dict["metrics"]
-    print(f"Cancer Type: {ctype} (n={num_samples}), Test Results: {metrics}\n")
+        ctype = sample["CANCER_TYPE"]
+        cancer_type_counts[ctype] += 1
 
-cancer_type_detailed_counts = defaultdict(int)
-for i in range(len(test_dataset)):
-    sample = test_dataset[i]
-    ctype_detailed = sample["CANCER_TYPE_DETAILED"]
-    cancer_type_detailed_counts[ctype_detailed] += 1
+    cancer_types_unique = list(cancer_type_counts.keys())
+    results_by_cancer_type = {}
 
-cancer_types_detailed_unique = list(cancer_type_detailed_counts.keys())
-results_by_cancer_type_detailed = {}
+    for ctype in cancer_types_unique:
+        indices = []
+        for i in range(len(test_dataset)):
+            sample = test_dataset[i]
+            if sample["CANCER_TYPE"] == ctype:
+                indices.append(i)
+        if len(indices) < 200:
+            continue
+        type_subset = Subset(test_dataset, indices)
+        type_result = trainer.evaluate(type_subset)
+        results_by_cancer_type[ctype] = {"num_samples": len(indices), "metrics": type_result}
+        
+    print("\n======== ALL CANCER TYPES' TEST RESULTS ========\n")
+    for ctype, result_dict in results_by_cancer_type.items():
+        num_samples = result_dict["num_samples"]
+        metrics = result_dict["metrics"]
+        print(f"Cancer Type: {ctype} (n={num_samples}), Test Results: {metrics}\n")
 
-for ctype_detailed in cancer_types_detailed_unique:
-    indices = []
+    cancer_type_detailed_counts = defaultdict(int)
     for i in range(len(test_dataset)):
         sample = test_dataset[i]
-        if sample["CANCER_TYPE_DETAILED"] == ctype_detailed:
-            indices.append(i)
-    if len(indices) < 200:
-        continue
-    type_subset = Subset(test_dataset, indices)
-    type_result = trainer.evaluate(type_subset)
-    results_by_cancer_type_detailed[ctype_detailed] = {"num_samples": len(indices), "metrics": type_result}
-    
-print("\n======== ALL CANCER TYPE DETAILED TEST RESULTS ========\n")
-for ctype_detailed, result_dict in results_by_cancer_type_detailed.items():
-    num_samples = result_dict["num_samples"]
-    metrics = result_dict["metrics"]
-    print(f"Cancer Type Detailed: {ctype_detailed} (n={num_samples}), Test Results: {metrics}\n")
-    
-print("\n======== FINAL TEST RESULTS ========\n")
-print(f"Final Test results: {test_results}\n")
+        ctype_detailed = sample["CANCER_TYPE_DETAILED"]
+        cancer_type_detailed_counts[ctype_detailed] += 1
 
-pred_output = trainer.predict(test_dataset)
+    cancer_types_detailed_unique = list(cancer_type_detailed_counts.keys())
+    results_by_cancer_type_detailed = {}
 
-logits = pred_output.predictions
-labels = pred_output.label_ids
+    for ctype_detailed in cancer_types_detailed_unique:
+        indices = []
+        for i in range(len(test_dataset)):
+            sample = test_dataset[i]
+            if sample["CANCER_TYPE_DETAILED"] == ctype_detailed:
+                indices.append(i)
+        if len(indices) < 200:
+            continue
+        type_subset = Subset(test_dataset, indices)
+        type_result = trainer.evaluate(type_subset)
+        results_by_cancer_type_detailed[ctype_detailed] = {"num_samples": len(indices), "metrics": type_result}
+        
+    print("\n======== ALL CANCER TYPE DETAILED TEST RESULTS ========\n")
+    for ctype_detailed, result_dict in results_by_cancer_type_detailed.items():
+        num_samples = result_dict["num_samples"]
+        metrics = result_dict["metrics"]
+        print(f"Cancer Type Detailed: {ctype_detailed} (n={num_samples}), Test Results: {metrics}\n")
+        
+    print("\n======== FINAL TEST RESULTS ========\n")
+    print(f"Final Test results: {test_results}\n")
 
-# softmax -> probability
-probs = torch.softmax(torch.tensor(logits), dim=-1).cpu().numpy()
-preds = np.argmax(probs, axis=-1)
-prob_class1 = probs[:, 1]
+    # --------------------------------------------------------
+    # Step 7: Predictions, metrics, and CSV outputs
+    # --------------------------------------------------------
+    pred_output = trainer.predict(test_dataset)
 
-# Accuracy
-acc_overall = accuracy_score(labels, preds)
-print(f"\n=== Overall Accuracy: {acc_overall:.4f} ===\n")
+    logits = pred_output.predictions
+    labels = pred_output.label_ids
 
-# Class 1 F1
-f1_class1_overall = f1_score(labels, preds, pos_label=1)
-print(f"\n=== Overall Class 1 (3-year mortality) F1 Score: {f1_class1_overall:.4f} ===\n")
+    # softmax -> probability
+    probs = torch.softmax(torch.tensor(logits), dim=-1).cpu().numpy()
+    preds = np.argmax(probs, axis=-1)
+    prob_class1 = probs[:, 1]
 
-# AUC
-if len(np.unique(labels)) < 2:
-    auc_overall = np.nan
-else:
-    auc_overall = roc_auc_score(labels, prob_class1)
-print(f"\n=== Overall ROC AUC: {auc_overall:.4f} ===\n")
+    # Accuracy
+    acc_overall = accuracy_score(labels, preds)
+    print(f"\n=== Overall Accuracy: {acc_overall:.4f} ===\n")
 
-cancer_type_list = []
-cancer_type_detailed_list = []
+    # Class 1 F1
+    f1_class1_overall = f1_score(labels, preds, pos_label=1)
+    print(f"\n=== Overall Class 1 (3-year mortality) F1 Score: {f1_class1_overall:.4f} ===\n")
 
-for i in range(len(test_dataset)):
-    sample = test_dataset[i]
-    cancer_type_list.append(sample["CANCER_TYPE"])
-    cancer_type_detailed_list.append(sample["CANCER_TYPE_DETAILED"])
-
-results_df = pd.DataFrame({
-    "true_label": labels,
-    "pred_label": preds,
-    "prob_class0": probs[:, 0],
-    "prob_class1": probs[:, 1],
-    "CANCER_TYPE": cancer_type_list,
-    "CANCER_TYPE_DETAILED": cancer_type_detailed_list
-})
-
-results_df.to_csv("test_predictions_with_probability.csv", index=False)
-print("Saved probabilities to test_predictions_with_probability.csv")
-
-train_pred_output = trainer.predict(train_dataset)
-
-train_logits = train_pred_output.predictions
-train_labels = train_pred_output.label_ids
-
-train_probs = torch.softmax(torch.tensor(train_logits), dim=-1).cpu().numpy()
-train_preds = np.argmax(train_probs, axis=-1)
-
-train_cancer_type_list = []
-train_cancer_type_detailed_list = []
-
-for i in range(len(train_dataset)):
-    sample = train_dataset[i]
-    train_cancer_type_list.append(sample["CANCER_TYPE"])
-    train_cancer_type_detailed_list.append(sample["CANCER_TYPE_DETAILED"])
-
-train_results_df = pd.DataFrame({
-    "true_label": train_labels,
-    "pred_label": train_preds,
-    "prob_class0": train_probs[:, 0],
-    "prob_class1": train_probs[:, 1],
-    "CANCER_TYPE": train_cancer_type_list,
-    "CANCER_TYPE_DETAILED": train_cancer_type_detailed_list
-})
-
-train_results_df.to_csv("train_predictions_with_probability.csv", index=False)
-print("Saved probabilities to train_predictions_with_probability.csv")
-
-val_pred_output = trainer.predict(val_dataset)
-
-val_logits = val_pred_output.predictions
-val_labels = val_pred_output.label_ids
-
-val_probs = torch.softmax(torch.tensor(val_logits), dim=-1).cpu().numpy()
-val_preds = np.argmax(val_probs, axis=-1)
-
-val_cancer_type_list = []
-val_cancer_type_detailed_list = []
-
-for i in range(len(val_dataset)):
-    sample = val_dataset[i]
-    val_cancer_type_list.append(sample["CANCER_TYPE"])
-    val_cancer_type_detailed_list.append(sample["CANCER_TYPE_DETAILED"])
-
-val_results_df = pd.DataFrame({
-    "true_label": val_labels,
-    "pred_label": val_preds,
-    "prob_class0": val_probs[:, 0],
-    "prob_class1": val_probs[:, 1],
-    "CANCER_TYPE": val_cancer_type_list,
-    "CANCER_TYPE_DETAILED": val_cancer_type_detailed_list
-})
-
-val_results_df.to_csv("val_predictions_with_probability.csv", index=False)
-print("Saved probabilities to val_predictions_with_probability.csv")
-
-type_preds = defaultdict(list)
-type_labels = defaultdict(list)
-type_probs = defaultdict(list)
-
-for idx in range(len(test_dataset)):
-    sample = test_dataset[idx]
-    ctype = sample["CANCER_TYPE"]
-    type_preds[ctype].append(preds[idx])
-    type_labels[ctype].append(labels[idx])
-    type_probs[ctype].append(prob_class1[idx])
-
-print("=== Accuracy / Class 1 F1 / ROC AUC by CANCER_TYPE (n>=200) ===")
-for ctype, labs in type_labels.items():
-    if len(labs) < 200:
-        continue
-
-    acc_ct = accuracy_score(labs, type_preds[ctype])
-    f1_ct = f1_score(labs, type_preds[ctype], pos_label=1)
-
-    if len(set(labs)) < 2:
-        auc_ct = np.nan
-        print(f"{ctype} (n={len(labs)}): Accuracy = {acc_ct:.4f}, Class 1 F1 = {f1_ct:.4f}, ROC AUC = nan (only one class present)")
+    # AUC
+    if len(np.unique(labels)) < 2:
+        auc_overall = np.nan
     else:
-        auc_ct = roc_auc_score(labs, type_probs[ctype])
-        print(f"{ctype} (n={len(labs)}): Accuracy = {acc_ct:.4f}, Class 1 F1 = {f1_ct:.4f}, ROC AUC = {auc_ct:.4f}")
-print()
+        auc_overall = roc_auc_score(labels, prob_class1)
+    print(f"\n=== Overall ROC AUC: {auc_overall:.4f} ===\n")
 
-detailed_preds = defaultdict(list)
-detailed_labels = defaultdict(list)
-detailed_probs = defaultdict(list)
+    cancer_type_list = []
+    cancer_type_detailed_list = []
 
-for idx in range(len(test_dataset)):
-    sample = test_dataset[idx]
-    ctype_det = sample["CANCER_TYPE_DETAILED"]
-    detailed_preds[ctype_det].append(preds[idx])
-    detailed_labels[ctype_det].append(labels[idx])
-    detailed_probs[ctype_det].append(prob_class1[idx])
+    for i in range(len(test_dataset)):
+        sample = test_dataset[i]
+        cancer_type_list.append(sample["CANCER_TYPE"])
+        cancer_type_detailed_list.append(sample["CANCER_TYPE_DETAILED"])
 
-print("=== Accuracy / Class 1 F1 / ROC AUC by CANCER_TYPE_DETAILED (n>=200) ===")
+    results_df = pd.DataFrame({
+        "true_label": labels,
+        "pred_label": preds,
+        "prob_class0": probs[:, 0],
+        "prob_class1": probs[:, 1],
+        "CANCER_TYPE": cancer_type_list,
+        "CANCER_TYPE_DETAILED": cancer_type_detailed_list
+    })
 
-for ctype_det, labs in detailed_labels.items():
-    if len(labs) < 200:
-        continue
+    results_df.to_csv("test_predictions_with_probability.csv", index=False)
+    print("Saved probabilities to test_predictions_with_probability.csv")
 
-    acc_det = accuracy_score(labs, detailed_preds[ctype_det])
-    f1_det = f1_score(labs, detailed_preds[ctype_det], pos_label=1)
+    train_pred_output = trainer.predict(train_dataset)
 
-    if len(set(labs)) < 2:
-        auc_det = np.nan
-        print(f"{ctype_det} (n={len(labs)}): Accuracy = {acc_det:.4f}, Class 1 F1 = {f1_det:.4f}, ROC AUC = nan (only one class present)")
-    else:
-        auc_det = roc_auc_score(labs, detailed_probs[ctype_det])
-        print(f"{ctype_det} (n={len(labs)}): Accuracy = {acc_det:.4f}, Class 1 F1 = {f1_det:.4f}, ROC AUC = {auc_det:.4f}")
+    train_logits = train_pred_output.predictions
+    train_labels = train_pred_output.label_ids
+
+    train_probs = torch.softmax(torch.tensor(train_logits), dim=-1).cpu().numpy()
+    train_preds = np.argmax(train_probs, axis=-1)
+
+    train_cancer_type_list = []
+    train_cancer_type_detailed_list = []
+
+    for i in range(len(train_dataset)):
+        sample = train_dataset[i]
+        train_cancer_type_list.append(sample["CANCER_TYPE"])
+        train_cancer_type_detailed_list.append(sample["CANCER_TYPE_DETAILED"])
+
+    train_results_df = pd.DataFrame({
+        "true_label": train_labels,
+        "pred_label": train_preds,
+        "prob_class0": train_probs[:, 0],
+        "prob_class1": train_probs[:, 1],
+        "CANCER_TYPE": train_cancer_type_list,
+        "CANCER_TYPE_DETAILED": train_cancer_type_detailed_list
+    })
+
+    train_results_df.to_csv("train_predictions_with_probability.csv", index=False)
+    print("Saved probabilities to train_predictions_with_probability.csv")
+
+    val_pred_output = trainer.predict(val_dataset)
+
+    val_logits = val_pred_output.predictions
+    val_labels = val_pred_output.label_ids
+
+    val_probs = torch.softmax(torch.tensor(val_logits), dim=-1).cpu().numpy()
+    val_preds = np.argmax(val_probs, axis=-1)
+
+    val_cancer_type_list = []
+    val_cancer_type_detailed_list = []
+
+    for i in range(len(val_dataset)):
+        sample = val_dataset[i]
+        val_cancer_type_list.append(sample["CANCER_TYPE"])
+        val_cancer_type_detailed_list.append(sample["CANCER_TYPE_DETAILED"])
+
+    val_results_df = pd.DataFrame({
+        "true_label": val_labels,
+        "pred_label": val_preds,
+        "prob_class0": val_probs[:, 0],
+        "prob_class1": val_probs[:, 1],
+        "CANCER_TYPE": val_cancer_type_list,
+        "CANCER_TYPE_DETAILED": val_cancer_type_detailed_list
+    })
+
+    val_results_df.to_csv("val_predictions_with_probability.csv", index=False)
+    print("Saved probabilities to val_predictions_with_probability.csv")
+
+    type_preds = defaultdict(list)
+    type_labels = defaultdict(list)
+    type_probs = defaultdict(list)
+
+    for idx in range(len(test_dataset)):
+        sample = test_dataset[idx]
+        ctype = sample["CANCER_TYPE"]
+        type_preds[ctype].append(preds[idx])
+        type_labels[ctype].append(labels[idx])
+        type_probs[ctype].append(prob_class1[idx])
+
+    print("=== Accuracy / Class 1 F1 / ROC AUC by CANCER_TYPE (n>=200) ===")
+    for ctype, labs in type_labels.items():
+        if len(labs) < 200:
+            continue
+
+        acc_ct = accuracy_score(labs, type_preds[ctype])
+        f1_ct = f1_score(labs, type_preds[ctype], pos_label=1)
+
+        if len(set(labs)) < 2:
+            auc_ct = np.nan
+            print(f"{ctype} (n={len(labs)}): Accuracy = {acc_ct:.4f}, Class 1 F1 = {f1_ct:.4f}, ROC AUC = nan (only one class present)")
+        else:
+            auc_ct = roc_auc_score(labs, type_probs[ctype])
+            print(f"{ctype} (n={len(labs)}): Accuracy = {acc_ct:.4f}, Class 1 F1 = {f1_ct:.4f}, ROC AUC = {auc_ct:.4f}")
+    print()
+
+    detailed_preds = defaultdict(list)
+    detailed_labels = defaultdict(list)
+    detailed_probs = defaultdict(list)
+
+    for idx in range(len(test_dataset)):
+        sample = test_dataset[idx]
+        ctype_det = sample["CANCER_TYPE_DETAILED"]
+        detailed_preds[ctype_det].append(preds[idx])
+        detailed_labels[ctype_det].append(labels[idx])
+        detailed_probs[ctype_det].append(prob_class1[idx])
+
+    print("=== Accuracy / Class 1 F1 / ROC AUC by CANCER_TYPE_DETAILED (n>=200) ===")
+
+    for ctype_det, labs in detailed_labels.items():
+        if len(labs) < 200:
+            continue
+
+        acc_det = accuracy_score(labs, detailed_preds[ctype_det])
+        f1_det = f1_score(labs, detailed_preds[ctype_det], pos_label=1)
+
+        if len(set(labs)) < 2:
+            auc_det = np.nan
+            print(f"{ctype_det} (n={len(labs)}): Accuracy = {acc_det:.4f}, Class 1 F1 = {f1_det:.4f}, ROC AUC = nan (only one class present)")
+        else:
+            auc_det = roc_auc_score(labs, detailed_probs[ctype_det])
+            print(f"{ctype_det} (n={len(labs)}): Accuracy = {acc_det:.4f}, Class 1 F1 = {f1_det:.4f}, ROC AUC = {auc_det:.4f}")
+
+if __name__ == "__main__":
+    main()

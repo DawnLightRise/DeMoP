@@ -1,3 +1,27 @@
+# The original model design and initial implementation of this program were
+# developed by Chen Tang in 2024-2025 during his appointment at UT Southwestern
+# Medical Center (2021-2025).
+
+# Chen Tang left UT Southwestern Medical Center in July 2025 and has continued
+# scientific communication with collaborators regarding manuscripts that were
+# in preparation.
+
+# This repository is publicly available, and Chen Tang made additional updates 
+# to the code in his personal time, primarily in August 2026, involving added 
+# comments and structural organization, when he was not employed by UT Southwestern 
+# Medical Center.
+
+# Chen Tang's current email: chen.tang.diary@gmail.com.
+
+# Information for the Corresponding Manuscript:
+# Tang, C., L. Yu, Q. Li, and L. Xu. 2026. DeMoP: A Language-Model-Guided Mixture-of-Experts
+# Framework for Cancer Prognosis. bioRxiv preprint. https://doi.org/10.64898/2026.08.24.746579.
+# Manuscript under consideration at Nature Machine Intelligence as of August 27, 2026.
+
+# ============================================================
+# 1. Environment and imports
+# ============================================================
+
 import os
 os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 
@@ -12,8 +36,9 @@ from sklearn.metrics import accuracy_score, f1_score, roc_auc_score
 
 from transformers import DebertaV2Tokenizer, DebertaV2Model, set_seed
 
-set_seed(42)
-torch.cuda.empty_cache()
+# ============================================================
+# 2. Configuration
+# ============================================================
 
 MODEL_DIR = "./deberta_finetuned_custom_OS_0422_EarlyStopping"
 MODEL_WEIGHTS = os.path.join(MODEL_DIR, "model_weights.pth")
@@ -28,8 +53,9 @@ MAX_LEN = 512
 NUM_EXPERTS = 4
 NUM_CLASSES = 2
 
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
+# ============================================================
+# 3. Inference dataset
+# ============================================================
 
 class InferenceDataset(Dataset):
     def __init__(self, df, tokenizer, text_col="description", label_col=None, max_len=512):
@@ -71,6 +97,9 @@ class InferenceDataset(Dataset):
 
         return item
 
+# ============================================================
+# 4. Model architecture
+# ============================================================
 
 class Attention(nn.Module):
     def __init__(self, input_dim):
@@ -186,102 +215,9 @@ class CustomDebertaV3MoEForSequenceClassification(nn.Module):
         logits = self.moe(pooled)                                # [B, 2]
         return logits
 
-
-print("Loading tokenizer...")
-tokenizer = DebertaV2Tokenizer.from_pretrained(MODEL_DIR)
-
-print("Building model...")
-model = CustomDebertaV3MoEForSequenceClassification(num_experts=NUM_EXPERTS)
-
-print("Loading model weights...")
-state_dict = torch.load(MODEL_WEIGHTS, map_location=device)
-model.load_state_dict(state_dict)
-model.to(device)
-model.eval()
-
-print("Model loaded successfully.")
-
-
-df = pd.read_csv(INPUT_CSV, index_col=0)
-dataset = InferenceDataset(
-    df=df,
-    tokenizer=tokenizer,
-    text_col=TEXT_COLUMN,
-    label_col=LABEL_COLUMN if LABEL_COLUMN in df.columns else None,
-    max_len=MAX_LEN
-)
-loader = DataLoader(dataset, batch_size=BATCH_SIZE, shuffle=False)
-
-
-all_row_indices = []
-all_logits = []
-all_labels = []
-all_cancer_types = []
-all_cancer_types_detailed = []
-
-print("Running inference...")
-with torch.no_grad():
-    for batch in loader:
-        input_ids = batch["input_ids"].to(device)
-        attention_mask = batch["attention_mask"].to(device)
-
-        logits = model(input_ids=input_ids, attention_mask=attention_mask)
-        probs = F.softmax(logits, dim=-1)
-
-        all_logits.append(probs.cpu().numpy())
-        all_row_indices.extend(batch["row_index"].tolist())
-
-        if "labels" in batch:
-            all_labels.extend(batch["labels"].tolist())
-
-        if "CANCER_TYPE" in batch:
-            all_cancer_types.extend(batch["CANCER_TYPE"])
-        if "CANCER_TYPE_DETAILED" in batch:
-            all_cancer_types_detailed.extend(batch["CANCER_TYPE_DETAILED"])
-
-probs = np.concatenate(all_logits, axis=0)
-preds = np.argmax(probs, axis=-1)
-
-
-results_df = pd.DataFrame({
-    "row_index": all_row_indices,
-    "pred_label": preds,
-    "prob_class0": probs[:, 0],
-    "prob_class1": probs[:, 1],
-})
-
-if len(all_labels) > 0:
-    results_df["true_label"] = all_labels
-
-if len(all_cancer_types) == len(results_df):
-    results_df["CANCER_TYPE"] = all_cancer_types
-
-if len(all_cancer_types_detailed) == len(results_df):
-    results_df["CANCER_TYPE_DETAILED"] = all_cancer_types_detailed
-
-results_df.to_csv(OUTPUT_CSV, index=False)
-print(f"Saved inference results to: {OUTPUT_CSV}")
-
-
-if len(all_labels) > 0:
-    labels = np.array(all_labels)
-    prob_class1 = probs[:, 1]
-
-    acc = accuracy_score(labels, preds)
-    f1_weighted = f1_score(labels, preds, average="weighted")
-    f1_class1 = f1_score(labels, preds, pos_label=1)
-
-    if len(np.unique(labels)) < 2:
-        auc = np.nan
-    else:
-        auc = roc_auc_score(labels, prob_class1)
-
-    print("\n===== Inference Metrics =====")
-    print(f"Accuracy:        {acc:.4f}")
-    print(f"Weighted F1:     {f1_weighted:.4f}")
-    print(f"Class 1 F1:      {f1_class1:.4f}")
-    print(f"ROC AUC:         {auc:.4f}")
-
+# ============================================================
+# 5. Single-text prediction helper
+# ============================================================
 
 def predict_single_text(text, tokenizer, model, device, max_len=512):
     model.eval()
@@ -309,7 +245,131 @@ def predict_single_text(text, tokenizer, model, device, max_len=512):
         "prob_class1": float(probs[1]),
     }
 
+# ============================================================
+# 6. Main
+# ============================================================
 
-# sample_text = "Patient is a 65-year-old male with ..."
-# result = predict_single_text(sample_text, tokenizer, model, device, max_len=512)
-# print(result)
+def main():
+    # --------------------------------------------------------
+    # Step 1: Reproducibility and device setup
+    # --------------------------------------------------------
+    set_seed(42)
+    torch.cuda.empty_cache()
+
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    # --------------------------------------------------------
+    # Step 2: Load tokenizer, build model, and load weights
+    # --------------------------------------------------------
+    print("Loading tokenizer...")
+    tokenizer = DebertaV2Tokenizer.from_pretrained(MODEL_DIR)
+
+    print("Building model...")
+    model = CustomDebertaV3MoEForSequenceClassification(num_experts=NUM_EXPERTS)
+
+    print("Loading model weights...")
+    state_dict = torch.load(MODEL_WEIGHTS, map_location=device)
+    model.load_state_dict(state_dict)
+    model.to(device)
+    model.eval()
+
+    print("Model loaded successfully.")
+
+    # --------------------------------------------------------
+    # Step 3: Load the input data and build the DataLoader
+    # --------------------------------------------------------
+    df = pd.read_csv(INPUT_CSV, index_col=0)
+    dataset = InferenceDataset(
+        df=df,
+        tokenizer=tokenizer,
+        text_col=TEXT_COLUMN,
+        label_col=LABEL_COLUMN if LABEL_COLUMN in df.columns else None,
+        max_len=MAX_LEN
+    )
+    loader = DataLoader(dataset, batch_size=BATCH_SIZE, shuffle=False)
+
+    # --------------------------------------------------------
+    # Step 4: Run batch inference
+    # --------------------------------------------------------
+    all_row_indices = []
+    all_logits = []
+    all_labels = []
+    all_cancer_types = []
+    all_cancer_types_detailed = []
+
+    print("Running inference...")
+    with torch.no_grad():
+        for batch in loader:
+            input_ids = batch["input_ids"].to(device)
+            attention_mask = batch["attention_mask"].to(device)
+
+            logits = model(input_ids=input_ids, attention_mask=attention_mask)
+            probs = F.softmax(logits, dim=-1)
+
+            all_logits.append(probs.cpu().numpy())
+            all_row_indices.extend(batch["row_index"].tolist())
+
+            if "labels" in batch:
+                all_labels.extend(batch["labels"].tolist())
+
+            if "CANCER_TYPE" in batch:
+                all_cancer_types.extend(batch["CANCER_TYPE"])
+            if "CANCER_TYPE_DETAILED" in batch:
+                all_cancer_types_detailed.extend(batch["CANCER_TYPE_DETAILED"])
+
+    probs = np.concatenate(all_logits, axis=0)
+    preds = np.argmax(probs, axis=-1)
+
+    # --------------------------------------------------------
+    # Step 5: Build and save the prediction table
+    # --------------------------------------------------------
+    results_df = pd.DataFrame({
+        "row_index": all_row_indices,
+        "pred_label": preds,
+        "prob_class0": probs[:, 0],
+        "prob_class1": probs[:, 1],
+    })
+
+    if len(all_labels) > 0:
+        results_df["true_label"] = all_labels
+
+    if len(all_cancer_types) == len(results_df):
+        results_df["CANCER_TYPE"] = all_cancer_types
+
+    if len(all_cancer_types_detailed) == len(results_df):
+        results_df["CANCER_TYPE_DETAILED"] = all_cancer_types_detailed
+
+    results_df.to_csv(OUTPUT_CSV, index=False)
+    print(f"Saved inference results to: {OUTPUT_CSV}")
+
+    # --------------------------------------------------------
+    # Step 6: Report inference metrics when labels are available
+    # --------------------------------------------------------
+    if len(all_labels) > 0:
+        labels = np.array(all_labels)
+        prob_class1 = probs[:, 1]
+
+        acc = accuracy_score(labels, preds)
+        f1_weighted = f1_score(labels, preds, average="weighted")
+        f1_class1 = f1_score(labels, preds, pos_label=1)
+
+        if len(np.unique(labels)) < 2:
+            auc = np.nan
+        else:
+            auc = roc_auc_score(labels, prob_class1)
+
+        print("\n===== Inference Metrics =====")
+        print(f"Accuracy:        {acc:.4f}")
+        print(f"Weighted F1:     {f1_weighted:.4f}")
+        print(f"Class 1 F1:      {f1_class1:.4f}")
+        print(f"ROC AUC:         {auc:.4f}")
+
+    # --------------------------------------------------------
+    # Optional: single-text inference example
+    # --------------------------------------------------------
+    # sample_text = "Patient is a 65-year-old male with ..."
+    # result = predict_single_text(sample_text, tokenizer, model, device, max_len=512)
+    # print(result)
+
+if __name__ == "__main__":
+    main()
