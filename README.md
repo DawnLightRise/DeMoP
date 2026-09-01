@@ -1,7 +1,7 @@
 > [!NOTE]
 > Chen Tang is developing a new research project: [DoMeRa](https://github.com/DawnLightRise/DoMeRa-project).
 >
-> This notice may be removed in the future. For updates on this, please follow Chen Tang's GitHub profile,[DawnLightRise](https://github.com/DawnLightRise).
+> This notice may be removed in the future. For updates on this, please follow Chen Tang's GitHub profile [DawnLightRise](https://github.com/DawnLightRise).
 
 # DeMoP
 
