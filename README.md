@@ -1,6 +1,6 @@
 > [!NOTE]
 >
-> **DoMeRa** *(Independent research project in development, building on insights from DeMoP but separate from DeMoP.)*
+> **DoMeRa** *(Independent new research project in development, building on insights from DeMoP but separate from DeMoP.)*
 >
 > DoMeRa explores a more parameter-efficient approach using newer modeling techniques, with substantially fewer trainable parameters while aiming to achieve comparable or potentially better performance.
 >
