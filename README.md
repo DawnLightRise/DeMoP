@@ -1,4 +1,4 @@
-> [!NOTE]
+> [!NOTE ON NEW RESEARCH]
 >
 > **DoMeRa** *(Independent research project in development, building on insights from DeMoP but separate from DeMoP.)*
 >
