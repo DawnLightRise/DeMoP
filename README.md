@@ -1,3 +1,18 @@
+> [!NOTE]
+> ## Independent Research — Separate from DeMoP
+>
+> **DoMeRa** *(Independent research project in development, building on insights from DeMoP.)*
+>
+> DoMeRa is a separate independent research project and is not part of DeMoP.
+>
+> It explores a more parameter-efficient approach using newer modeling techniques, with substantially fewer trainable parameters while aiming to achieve comparable or potentially better performance.
+>
+> GitHub: https://github.com/DawnLightRise/DoMeRa
+>
+> The source code is currently private while the research is ongoing.
+
+---
+
 # DeMoP
 
 DeMoP is a fine-tuned DeBERTa-v3-large + mixture-of-experts (MoE) framework for disease prognosis from structured natural-language descriptions of integrated clinical and molecular data.
