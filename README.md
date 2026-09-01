@@ -1,6 +1,11 @@
+> [!NOTE]
+> Chen Tang is developing a new research project: [DoMeRa](https://github.com/DawnLightRise/DoMeRa-project).
+>
+> This notice may be removed in the future. For updates on this, please follow the [DawnLightRise GitHub profile](https://github.com/DawnLightRise).
+
 # DeMoP
 
-DeMoP is a fine-tuned DeBERTa-v3-large + mixture-of-experts (MoE) framework for disease prognosis from structured natural-language descriptions of integrated clinical and molecular data.
+DeMoP is a fine-tuned **DeBERTa-v3-large** framework enhanced with a **mixture-of-experts (MoE)** architecture for disease prognosis based on structured natural-language descriptions that integrate clinical and molecular data.
 
 This repository contains three main scripts:
 
